@@ -18,7 +18,7 @@ def _create_note(
     try:
         result = vm.create_note(vault, path, body=body, frontmatter_data=frontmatter)
         return f"Created: {result}"
-    except (ValueError, FileExistsError) as e:
+    except (ValueError, FileExistsError, OSError) as e:
         raise ToolError(str(e))
 
 
@@ -27,7 +27,7 @@ def _write_note(vm: VaultManager, path: str, body: str, vault: str | None = None
     try:
         result = vm.write_note(vault, path, body)
         return f"Updated: {result}"
-    except (ValueError, FileNotFoundError) as e:
+    except (ValueError, FileNotFoundError, OSError) as e:
         raise ToolError(str(e))
 
 
@@ -42,7 +42,7 @@ def _edit_note(
     try:
         result = vm.edit_note(vault, path, old_string, new_string)
         return f"Edited: {result}"
-    except (ValueError, FileNotFoundError) as e:
+    except (ValueError, FileNotFoundError, OSError) as e:
         raise ToolError(str(e))
 
 
@@ -56,7 +56,7 @@ def _update_frontmatter(
     try:
         result = vm.update_frontmatter(vault, path, updates)
         return f"Updated frontmatter: {result}"
-    except (ValueError, FileNotFoundError) as e:
+    except (ValueError, FileNotFoundError, OSError) as e:
         raise ToolError(str(e))
 
 
@@ -70,7 +70,7 @@ def _move_note(
     try:
         result = vm.move_note(source_vault, dest_vault, source_path, dest_path)
         return f"Moved to: {result}"
-    except (ValueError, FileNotFoundError, FileExistsError) as e:
+    except (ValueError, FileNotFoundError, FileExistsError, OSError) as e:
         raise ToolError(str(e))
 
 
