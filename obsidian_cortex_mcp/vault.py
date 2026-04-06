@@ -23,8 +23,7 @@ class VaultManager:
 
     def _verify_ripgrep(self) -> None:
         """Raise RuntimeError if rg is not available on PATH."""
-        result = subprocess.run(["rg", "--version"], capture_output=True)
-        if result.returncode != 0:
+        if not shutil.which("rg"):
             raise RuntimeError(
                 "ripgrep (rg) is required but not found on PATH. "
                 "Install with: brew install ripgrep"
