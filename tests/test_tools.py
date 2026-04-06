@@ -87,3 +87,53 @@ class TestReadingTools:
         assert "#shared" in alpha_line
         assert "#shared" in beta_line
         assert "#shared" in shared_line
+
+
+class TestWritingTools:
+    def test_create_note(self, vm: VaultManager):
+        from obsidian_cortex_mcp.tools.writing import _create_note
+        result = _create_note(vm, path="brand_new.md", body="hi", vault="Alpha")
+        assert "Created" in result
+        assert (vm._vault_path("Alpha") / "brand_new.md").exists()
+
+    def test_create_note_exists_raises_tool_error(self, vm: VaultManager):
+        from obsidian_cortex_mcp.tools.writing import _create_note
+        with pytest.raises(ToolError):
+            _create_note(vm, path="plain.md", body="oops", vault="Alpha")
+
+    def test_write_note(self, vm: VaultManager):
+        from obsidian_cortex_mcp.tools.writing import _write_note
+        result = _write_note(vm, path="notes/hello.md", body="Updated.", vault="Alpha")
+        assert "Updated" in result
+
+    def test_write_note_missing_raises_tool_error(self, vm: VaultManager):
+        from obsidian_cortex_mcp.tools.writing import _write_note
+        with pytest.raises(ToolError):
+            _write_note(vm, path="ghost.md", body="x", vault="Alpha")
+
+    def test_edit_note(self, vm: VaultManager):
+        from obsidian_cortex_mcp.tools.writing import _edit_note
+        result = _edit_note(vm, path="notes/hello.md", old_string="Hello world.", new_string="Hi!", vault="Alpha")
+        assert "Edited" in result
+
+    def test_edit_note_not_found_raises_tool_error(self, vm: VaultManager):
+        from obsidian_cortex_mcp.tools.writing import _edit_note
+        with pytest.raises(ToolError, match="not found"):
+            _edit_note(vm, path="notes/hello.md", old_string="XYZZY", new_string="x", vault="Alpha")
+
+    def test_update_frontmatter(self, vm: VaultManager):
+        from obsidian_cortex_mcp.tools.writing import _update_frontmatter
+        result = _update_frontmatter(vm, path="notes/hello.md", updates={"status": "done"}, vault="Alpha")
+        assert "Updated frontmatter" in result
+
+    def test_move_note(self, vm: VaultManager):
+        from obsidian_cortex_mcp.tools.writing import _move_note
+        result = _move_note(vm, source_vault="Alpha", dest_vault="Beta", source_path="plain.md")
+        assert "Moved" in result
+        assert (vm._vault_path("Beta") / "plain.md").exists()
+
+    def test_move_note_dest_exists_raises_tool_error(self, vm: VaultManager):
+        from obsidian_cortex_mcp.tools.writing import _move_note
+        with pytest.raises(ToolError, match="already exists"):
+            _move_note(vm, source_vault="Alpha", dest_vault="Beta",
+                       source_path="notes/hello.md", dest_path="notes/world.md")
