@@ -50,3 +50,71 @@ class TestListNotes:
     def test_obsidian_dir_excluded(self, vm: VaultManager):
         entries = vm.list_notes("Alpha")
         assert not any(".obsidian" in e for e in entries)
+
+
+class TestReadNote:
+    def test_read_full_note(self, vm: VaultManager):
+        content = vm.read_note("Alpha", "plain.md")
+        assert "No frontmatter at all." in content
+
+    def test_read_with_line_numbers(self, vm: VaultManager):
+        content = vm.read_note("Alpha", "plain.md")
+        assert content.startswith("1\t")
+
+    def test_read_with_offset_and_limit(self, vm: VaultManager):
+        # notes/hello.md has 5 lines: ---, title:, tags:, ---, body
+        content = vm.read_note("Alpha", "notes/hello.md", offset=0, limit=1)
+        lines = content.splitlines()
+        assert len(lines) == 1
+        assert lines[0].startswith("1\t")
+
+    def test_read_missing_note_raises(self, vm: VaultManager):
+        with pytest.raises(FileNotFoundError, match="not found"):
+            vm.read_note("Alpha", "nonexistent.md")
+
+
+class TestSearch:
+    def test_search_content(self, vm: VaultManager):
+        results = vm.search("Swift content", ["Alpha"], search_type="content")
+        assert any("swift.md" in r["path"] for r in results)
+
+    def test_search_tags(self, vm: VaultManager):
+        results = vm.search("shared", ["Alpha", "Beta"], search_type="tags")
+        paths = [r["path"] for r in results]
+        assert any("hello.md" in p for p in paths)
+        assert any("world.md" in p for p in paths)
+
+    def test_search_tags_case_insensitive(self, vm: VaultManager):
+        results = vm.search("SHARED", ["Alpha"], search_type="tags")
+        assert len(results) > 0
+
+    def test_search_tags_substring(self, vm: VaultManager):
+        # "alph" should match tag "alpha"
+        results = vm.search("alph", ["Alpha"], search_type="tags")
+        assert len(results) > 0
+
+    def test_search_unknown_vault_raises(self, vm: VaultManager):
+        with pytest.raises(ValueError, match="not a recognized vault"):
+            vm.search("anything", ["NoSuchVault"])
+
+
+class TestListTags:
+    def test_single_vault_tags(self, vm: VaultManager):
+        tag_map = vm.list_tags(["Alpha"])
+        assert "shared" in tag_map["Alpha"]
+        assert "alpha" in tag_map["Alpha"]
+
+    def test_multi_vault_tags(self, vm: VaultManager):
+        tag_map = vm.list_tags(["Alpha", "Beta"])
+        assert "shared" in tag_map["Alpha"]
+        assert "shared" in tag_map["Beta"]
+
+    def test_tags_sorted(self, vm: VaultManager):
+        tag_map = vm.list_tags(["Alpha"])
+        tags = tag_map["Alpha"]
+        assert tags == sorted(tags)
+
+    def test_note_without_frontmatter_not_included(self, vm: VaultManager):
+        # plain.md has no frontmatter, so shouldn't cause errors
+        tag_map = vm.list_tags(["Alpha"])
+        assert isinstance(tag_map["Alpha"], list)

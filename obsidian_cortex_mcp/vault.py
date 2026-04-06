@@ -85,3 +85,109 @@ class VaultManager:
             entries.append(rel + ("/" if path.is_dir() else ""))
 
         return entries
+
+    # ── Reading ──────────────────────────────────────────────────────────────
+
+    def read_note(
+        self,
+        vault: str,
+        note_path: str,
+        offset: int = 0,
+        limit: Optional[int] = None,
+    ) -> str:
+        """Read note content with line numbers. offset/limit for paging."""
+        vault_path = self._vault_path(vault)
+        full_path = vault_path / note_path
+
+        if not full_path.exists():
+            raise FileNotFoundError(
+                f"Note not found at '{note_path}' in vault '{vault}'"
+            )
+
+        lines = full_path.read_text(encoding="utf-8").splitlines(keepends=True)
+        sliced = lines[offset : offset + limit] if limit is not None else lines[offset:]
+        numbered = [f"{offset + i + 1}\t{line}" for i, line in enumerate(sliced)]
+        return "".join(numbered)
+
+    def search(
+        self,
+        query: str,
+        vaults: list[str],
+        search_type: str = "content",
+    ) -> list[dict]:
+        """Search vaults. search_type: 'content' | 'frontmatter' | 'tags'."""
+        if search_type == "tags":
+            return self._search_tags(query, vaults)
+
+        results = []
+        for vault_name in vaults:
+            vault_path = self._vault_path(vault_name)
+            proc = subprocess.run(
+                ["rg", "--json", "-g", "*.md", query, str(vault_path)],
+                capture_output=True,
+                text=True,
+            )
+            for line in proc.stdout.splitlines():
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if obj.get("type") != "match":
+                    continue
+                data = obj["data"]
+                try:
+                    rel_path = str(
+                        Path(data["path"]["text"]).relative_to(vault_path)
+                    )
+                    results.append({
+                        "vault": vault_name,
+                        "path": rel_path,
+                        "line_number": data["line_number"],
+                        "snippet": data["lines"]["text"].rstrip(),
+                    })
+                except (KeyError, ValueError):
+                    continue
+        return results
+
+    def _search_tags(self, query: str, vaults: list[str]) -> list[dict]:
+        """Tag search via frontmatter parsing. Case-insensitive substring."""
+        query_lower = query.lower()
+        results = []
+        for vault_name in vaults:
+            vault_path = self._vault_path(vault_name)
+            for md_file in sorted(vault_path.rglob("*.md")):
+                if not self._is_note(md_file):
+                    continue
+                content = md_file.read_text(encoding="utf-8")
+                fm, _ = parse(content)
+                raw_tags = fm.get("tags", [])
+                if isinstance(raw_tags, str):
+                    raw_tags = [raw_tags]
+                matching = [
+                    str(t) for t in raw_tags if query_lower in str(t).lower()
+                ]
+                if matching:
+                    results.append({
+                        "vault": vault_name,
+                        "path": str(md_file.relative_to(vault_path)),
+                        "matching_tags": matching,
+                    })
+        return results
+
+    def list_tags(self, vaults: list[str]) -> dict[str, list[str]]:
+        """Return {vault_name: sorted_tag_list} for each specified vault."""
+        result: dict[str, list[str]] = {}
+        for vault_name in vaults:
+            vault_path = self._vault_path(vault_name)
+            tags: set[str] = set()
+            for md_file in vault_path.rglob("*.md"):
+                if not self._is_note(md_file):
+                    continue
+                content = md_file.read_text(encoding="utf-8")
+                fm, _ = parse(content)
+                raw_tags = fm.get("tags", [])
+                if isinstance(raw_tags, str):
+                    raw_tags = [raw_tags]
+                tags.update(str(t) for t in raw_tags if t)
+            result[vault_name] = sorted(tags)
+        return result
