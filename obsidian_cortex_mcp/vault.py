@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
 
-from .frontmatter import parse, serialize
+from .frontmatter import parse
 
 
 class VaultManager:
@@ -115,9 +114,11 @@ class VaultManager:
         vaults: list[str],
         search_type: str = "content",
     ) -> list[dict]:
-        """Search vaults. search_type: 'content' | 'frontmatter' | 'tags'."""
+        """Search vaults. search_type: 'content' (default) or 'tags'."""
         if search_type == "tags":
             return self._search_tags(query, vaults)
+        if search_type != "content":
+            raise ValueError(f"Unknown search_type '{search_type}'. Valid values: 'content', 'tags'")
 
         results = []
         for vault_name in vaults:

@@ -97,6 +97,10 @@ class TestSearch:
         with pytest.raises(ValueError, match="not a recognized vault"):
             vm.search("anything", ["NoSuchVault"])
 
+    def test_search_invalid_type_raises(self, vm: VaultManager):
+        with pytest.raises(ValueError, match="Unknown search_type"):
+            vm.search("anything", ["Alpha"], search_type="invalid")
+
 
 class TestListTags:
     def test_single_vault_tags(self, vm: VaultManager):
