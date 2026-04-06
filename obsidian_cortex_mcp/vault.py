@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from .frontmatter import parse
+from .frontmatter import parse, serialize
 
 
 class VaultManager:
@@ -192,3 +192,124 @@ class VaultManager:
                 tags.update(str(t) for t in raw_tags if t)
             result[vault_name] = sorted(tags)
         return result
+
+    # ── Writing ─────────────────────────────────────────────────────────────
+
+    def create_note(
+        self,
+        vault: str,
+        note_path: str,
+        body: str = "",
+        frontmatter_data: Optional[dict] = None,
+    ) -> str:
+        """Create a new note. Errors if path already exists."""
+        vault_path = self._vault_path(vault)
+        full_path = vault_path / note_path
+
+        if full_path.exists():
+            raise FileExistsError(
+                f"Note already exists at '{note_path}' — "
+                "use write_note or edit_note to modify it"
+            )
+
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        content = serialize(frontmatter_data or {}, body)
+        full_path.write_text(content, encoding="utf-8")
+        return str(full_path)
+
+    def write_note(self, vault: str, note_path: str, body: str) -> str:
+        """Replace body of existing note; frontmatter is preserved."""
+        vault_path = self._vault_path(vault)
+        full_path = vault_path / note_path
+
+        if not full_path.exists():
+            raise FileNotFoundError(
+                f"Note not found at '{note_path}' in vault '{vault}' — "
+                "use create_note to create it"
+            )
+
+        fm, _ = parse(full_path.read_text(encoding="utf-8"))
+        full_path.write_text(serialize(fm, body), encoding="utf-8")
+        return str(full_path)
+
+    def edit_note(
+        self,
+        vault: str,
+        note_path: str,
+        old_string: str,
+        new_string: str,
+    ) -> str:
+        """Exact string replacement. old_string must match exactly once."""
+        vault_path = self._vault_path(vault)
+        full_path = vault_path / note_path
+
+        if not full_path.exists():
+            raise FileNotFoundError(
+                f"Note not found at '{note_path}' in vault '{vault}'"
+            )
+
+        content = full_path.read_text(encoding="utf-8")
+        count = content.count(old_string)
+
+        if count == 0:
+            raise ValueError("old_string not found in note")
+        if count > 1:
+            raise ValueError(
+                f"old_string matches {count} locations — make it more specific"
+            )
+
+        full_path.write_text(content.replace(old_string, new_string, 1), encoding="utf-8")
+        return str(full_path)
+
+    def update_frontmatter(
+        self,
+        vault: str,
+        note_path: str,
+        updates: dict,
+    ) -> str:
+        """Merge updates into frontmatter. Set value to None to remove a key."""
+        vault_path = self._vault_path(vault)
+        full_path = vault_path / note_path
+
+        if not full_path.exists():
+            raise FileNotFoundError(
+                f"Note not found at '{note_path}' in vault '{vault}'"
+            )
+
+        fm, body = parse(full_path.read_text(encoding="utf-8"))
+        for key, value in updates.items():
+            if value is None:
+                fm.pop(key, None)
+            else:
+                fm[key] = value
+
+        full_path.write_text(serialize(fm, body), encoding="utf-8")
+        return str(full_path)
+
+    def move_note(
+        self,
+        source_vault: str,
+        dest_vault: str,
+        source_path: str,
+        dest_path: Optional[str] = None,
+    ) -> str:
+        """Move a note cross-vault. dest_path defaults to source_path."""
+        src_vault_path = self._vault_path(source_vault)
+        dst_vault_path = self._vault_path(dest_vault)
+
+        src_full = src_vault_path / source_path
+        effective_dest = dest_path or source_path
+        dst_full = dst_vault_path / effective_dest
+
+        if not src_full.exists():
+            raise FileNotFoundError(
+                f"Note not found at '{source_path}' in vault '{source_vault}'"
+            )
+        if dst_full.exists():
+            raise FileExistsError(
+                f"Destination already exists at '{effective_dest}' in vault '{dest_vault}'"
+            )
+
+        dst_full.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src_full), str(dst_full))
+        return str(dst_full)
