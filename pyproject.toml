@@ -14,5 +14,8 @@ dependencies = [
 [project.scripts]
 obsidian-cortex-mcp = "obsidian_cortex_mcp.__main__:main"
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
