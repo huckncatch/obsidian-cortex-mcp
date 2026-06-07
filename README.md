@@ -10,7 +10,7 @@ server is the shim layer that unifies them.
 ## Tools
 
 | Tool | Description |
-|------|-------------|
+| ---- | ----------- |
 | `list_vaults` | Detect all child vaults under the root |
 | `list_notes` | Browse vault directory tree |
 | `read_note` | Read note content (supports paging via offset/limit) |
@@ -38,7 +38,7 @@ python3.11 -m venv .venv
 ## Environment Variables
 
 | Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
+| -------- | -------- | ------- | ----------- |
 | `OBSIDIAN_CORTEX_ROOT` | Yes | — | Absolute path to the directory containing all vaults |
 | `DEFAULT_VAULT` | No | `Home` | Vault used when no vault is specified in a tool call |
 
