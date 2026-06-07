@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from obsidian_cortex_mcp.frontmatter import parse
@@ -221,3 +222,34 @@ class TestMoveNote:
     def test_errors_if_dest_exists(self, vm: VaultManager):
         with pytest.raises(FileExistsError, match="already exists"):
             vm.move_note("Alpha", "Beta", "notes/hello.md", "notes/world.md")
+
+
+class TestIntraVaultMove:
+    def test_intra_vault_move_calls_cli(self, vm: VaultManager):
+        with patch.object(vm, "_run_cli") as mock_cli:
+            vm.intra_vault_move("Alpha", "plain.md", "archive/plain.md")
+            mock_cli.assert_called_once_with("Alpha", "move", "path=plain.md", "to=archive/plain.md")
+
+    def test_intra_vault_move_source_missing_raises(self, vm: VaultManager):
+        with pytest.raises(FileNotFoundError, match="not found"):
+            vm.intra_vault_move("Alpha", "ghost.md", "dest.md")
+
+    def test_intra_vault_move_dest_exists_raises(self, vm: VaultManager):
+        with pytest.raises(FileExistsError, match="already exists"):
+            vm.intra_vault_move("Alpha", "plain.md", "notes/hello.md")
+
+    def test_intra_vault_move_cli_failure_raises(self, vm: VaultManager):
+        with patch.object(vm, "_run_cli", side_effect=RuntimeError("Obsidian not running")):
+            with pytest.raises(RuntimeError, match="Obsidian not running"):
+                vm.intra_vault_move("Alpha", "plain.md", "archive/plain.md")
+
+    def test_move_note_routes_same_vault_to_cli(self, vm: VaultManager):
+        with patch.object(vm, "intra_vault_move", return_value="mocked") as mock_intra:
+            vm.move_note("Alpha", "Alpha", "plain.md", "archive/plain.md")
+            mock_intra.assert_called_once_with("Alpha", "plain.md", "archive/plain.md")
+
+    def test_move_note_routes_cross_vault_to_shutil(self, vm: VaultManager):
+        with patch.object(vm, "_run_cli") as mock_cli:
+            vm.move_note("Alpha", "Beta", "plain.md")
+            mock_cli.assert_not_called()
+            assert (vm._vault_path("Beta") / "plain.md").exists()

@@ -42,6 +42,23 @@ class VaultManager:
         """True if path is a .md file outside of .obsidian directories."""
         return path.is_file() and path.suffix == ".md" and ".obsidian" not in path.parts
 
+    def _run_cli(self, vault_name: str, *args: str) -> str:
+        """Run an Obsidian CLI command targeting a specific vault. Requires Obsidian to be running."""
+        cmd = ["obsidian", f"vault={vault_name}", *args]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+        except FileNotFoundError:
+            raise RuntimeError(
+                "Obsidian CLI not found on PATH. "
+                "Ensure Obsidian.app is installed and 'obsidian' is in PATH."
+            )
+        if result.returncode != 0:
+            detail = result.stderr.strip() or result.stdout.strip()
+            raise RuntimeError(
+                f"Obsidian CLI error (is Obsidian running?): {detail}"
+            )
+        return result.stdout.strip()
+
     # ── Discovery ────────────────────────────────────────────────────────────
 
     def list_vault_names(self) -> list[str]:
@@ -286,6 +303,27 @@ class VaultManager:
         full_path.write_text(serialize(fm, body), encoding="utf-8")
         return str(full_path)
 
+    def intra_vault_move(self, vault: str, source_path: str, dest_path: str) -> str:
+        """Move a note within a vault using the Obsidian CLI (preserves wikilinks).
+
+        Requires Obsidian to be running.
+        """
+        vault_path = self._vault_path(vault)
+        src_full = vault_path / source_path
+        dst_full = vault_path / dest_path
+
+        if not src_full.exists():
+            raise FileNotFoundError(
+                f"Note not found at '{source_path}' in vault '{vault}'"
+            )
+        if dst_full.exists():
+            raise FileExistsError(
+                f"Destination already exists at '{dest_path}' in vault '{vault}'"
+            )
+
+        self._run_cli(vault, "move", f"path={source_path}", f"to={dest_path}")
+        return str(dst_full)
+
     def move_note(
         self,
         source_vault: str,
@@ -293,12 +331,16 @@ class VaultManager:
         source_path: str,
         dest_path: Optional[str] = None,
     ) -> str:
-        """Move a note cross-vault. dest_path defaults to source_path."""
+        """Move a note. Intra-vault uses CLI (wikilinks preserved); cross-vault uses filesystem."""
+        effective_dest = dest_path or source_path
+
+        if source_vault == dest_vault:
+            return self.intra_vault_move(source_vault, source_path, effective_dest)
+
         src_vault_path = self._vault_path(source_vault)
         dst_vault_path = self._vault_path(dest_vault)
 
         src_full = src_vault_path / source_path
-        effective_dest = dest_path or source_path
         dst_full = dst_vault_path / effective_dest
 
         if not src_full.exists():

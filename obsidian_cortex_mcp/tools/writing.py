@@ -70,7 +70,7 @@ def _move_note(
     try:
         result = vm.move_note(source_vault, dest_vault, source_path, dest_path)
         return f"Moved to: {result}"
-    except (ValueError, FileNotFoundError, FileExistsError, OSError) as e:
+    except (ValueError, FileNotFoundError, FileExistsError, RuntimeError, OSError) as e:
         raise ToolError(str(e))
 
 
@@ -140,13 +140,15 @@ def register(mcp: FastMCP, vm: VaultManager) -> None:
         source_path: str,
         dest_path: str | None = None,
     ) -> str:
-        """Move a note from one vault to another (cross-vault only).
+        """Move a note between vaults or within the same vault.
 
-        For intra-vault moves, use the Obsidian app to preserve wikilink integrity.
+        Intra-vault moves (source_vault == dest_vault) use the Obsidian CLI and
+        preserve wikilink integrity — requires Obsidian to be running.
+        Cross-vault moves use the filesystem directly.
 
         Args:
             source_vault: Vault to move from.
-            dest_vault: Vault to move to.
+            dest_vault: Vault to move to (same as source_vault for intra-vault move).
             source_path: Relative path in source vault.
             dest_path: Relative path in destination vault. Defaults to source_path.
         """
