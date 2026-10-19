@@ -20,7 +20,10 @@ server is the shim layer that unifies them.
 | `write_note` | Replace note body, preserving frontmatter |
 | `edit_note` | Exact string replacement (old_string → new_string) |
 | `update_frontmatter` | Add/update/remove frontmatter fields |
-| `move_note` | Move a note cross-vault (intra-vault: use Obsidian app) |
+| `move_note` | Move a note within or across vaults (see below) |
+
+Same-vault moves go through the Obsidian CLI, which rewrites wikilinks and needs
+Obsidian running; cross-vault moves use the filesystem.
 
 ## Requirements
 
@@ -30,7 +33,7 @@ server is the shim layer that unifies them.
 ## Setup
 
 ```bash
-cd /Users/soob/.config/claude/mcp-servers/obsidian-cortex-mcp
+cd ~/Developer/obsidian-cortex-mcp
 python3.11 -m venv .venv
 .venv/bin/pip install -e .
 ```
@@ -46,27 +49,35 @@ python3.11 -m venv .venv
 
 ### Claude Code
 
-Add to `/Users/soob/.config/claude/settings.json`:
-
-```json
-"obsidian-cortex": {
-  "command": "/Users/soob/.config/claude/mcp-servers/obsidian-cortex-mcp/.venv/bin/python",
-  "args": ["-m", "obsidian_cortex_mcp"],
-  "env": {
-    "OBSIDIAN_CORTEX_ROOT": "/Users/soob/Dropbox/Apps/Obsidian",
-    "DEFAULT_VAULT": "Home"
-  }
-}
+```bash
+claude mcp add --scope user obsidian-cortex \
+  -e OBSIDIAN_CORTEX_ROOT=/path/to/vaults -e DEFAULT_VAULT=Home \
+  -- /path/to/obsidian-cortex-mcp/.venv/bin/python -m obsidian_cortex_mcp
 ```
 
 ### Claude Desktop
 
-Add the same block to `~/Library/Application Support/Claude/claude_desktop_config.json`
-under `mcpServers`.
+Add under `mcpServers` in
+`~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+"obsidian-cortex": {
+  "command": "/path/to/obsidian-cortex-mcp/.venv/bin/python",
+  "args": ["-m", "obsidian_cortex_mcp"],
+  "env": { "OBSIDIAN_CORTEX_ROOT": "/path/to/vaults", "DEFAULT_VAULT": "Home" }
+}
+```
 
 ### VS Code (Claude Code for VS Code v2.1.87+)
 
 Add to your user `settings.json` under `mcp.servers`.
+
+### On this machine
+
+Both Claude clients launch the server through
+`~/config/brain/bin/obsidian-cortex.sh`, which sets the variables from the
+single vault-location definition in `~/config/home/.chezmoidata/brain.toml`.
+See the obsidian-cortex section of `~/config/NOTES.md`.
 
 ## Architecture
 
