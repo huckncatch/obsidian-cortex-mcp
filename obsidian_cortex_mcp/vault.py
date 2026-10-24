@@ -322,7 +322,12 @@ class VaultManager:
             )
 
         dst_full.parent.mkdir(parents=True, exist_ok=True)
-        self._run_cli(vault, "move", f"path={source_path}", f"to={dest_path}")
+        output = self._run_cli(vault, "move", f"path={source_path}", f"to={dest_path}")
+        if not dst_full.exists():
+            raise RuntimeError(
+                f"Obsidian CLI move did not create '{dest_path}' in vault '{vault}'"
+                + (f": {output}" if output else "")
+            )
         return str(dst_full)
 
     def move_note(

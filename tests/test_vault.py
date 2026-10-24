@@ -225,15 +225,29 @@ class TestMoveNote:
 
 
 class TestIntraVaultMove:
+    @staticmethod
+    def _fake_cli_move(vm: VaultManager):
+        """Stand-in for the Obsidian CLI move that moves the file on disk."""
+        def run(vault, _cmd, path_arg, to_arg):
+            root = vm._vault_path(vault)
+            (root / path_arg.removeprefix("path=")).rename(root / to_arg.removeprefix("to="))
+            return ""
+        return run
+
     def test_intra_vault_move_calls_cli(self, vm: VaultManager):
-        with patch.object(vm, "_run_cli") as mock_cli:
+        with patch.object(vm, "_run_cli", side_effect=self._fake_cli_move(vm)) as mock_cli:
             vm.intra_vault_move("Alpha", "plain.md", "archive/plain.md")
             mock_cli.assert_called_once_with("Alpha", "move", "path=plain.md", "to=archive/plain.md")
 
     def test_intra_vault_move_creates_dest_parent_dirs(self, vm: VaultManager):
-        with patch.object(vm, "_run_cli"):
+        with patch.object(vm, "_run_cli", side_effect=self._fake_cli_move(vm)):
             vm.intra_vault_move("Alpha", "plain.md", "deep/nested/plain.md")
-        assert (vm._vault_path("Alpha") / "deep/nested").is_dir()
+        assert (vm._vault_path("Alpha") / "deep/nested/plain.md").exists()
+
+    def test_intra_vault_move_silent_cli_failure_raises(self, vm: VaultManager):
+        with patch.object(vm, "_run_cli", return_value="Error: something went wrong"):
+            with pytest.raises(RuntimeError, match="did not create.*something went wrong"):
+                vm.intra_vault_move("Alpha", "plain.md", "archive/plain.md")
 
     def test_intra_vault_move_source_missing_raises(self, vm: VaultManager):
         with pytest.raises(FileNotFoundError, match="not found"):
