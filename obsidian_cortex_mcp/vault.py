@@ -321,6 +321,7 @@ class VaultManager:
                 f"Destination already exists at '{dest_path}' in vault '{vault}'"
             )
 
+        dst_full.parent.mkdir(parents=True, exist_ok=True)
         self._run_cli(vault, "move", f"path={source_path}", f"to={dest_path}")
         return str(dst_full)
 

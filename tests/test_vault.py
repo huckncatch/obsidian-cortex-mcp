@@ -230,6 +230,11 @@ class TestIntraVaultMove:
             vm.intra_vault_move("Alpha", "plain.md", "archive/plain.md")
             mock_cli.assert_called_once_with("Alpha", "move", "path=plain.md", "to=archive/plain.md")
 
+    def test_intra_vault_move_creates_dest_parent_dirs(self, vm: VaultManager):
+        with patch.object(vm, "_run_cli"):
+            vm.intra_vault_move("Alpha", "plain.md", "deep/nested/plain.md")
+        assert (vm._vault_path("Alpha") / "deep/nested").is_dir()
+
     def test_intra_vault_move_source_missing_raises(self, vm: VaultManager):
         with pytest.raises(FileNotFoundError, match="not found"):
             vm.intra_vault_move("Alpha", "ghost.md", "dest.md")
