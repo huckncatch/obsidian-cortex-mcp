@@ -95,6 +95,16 @@ class TestSearch:
         results = vm.search("alph", ["Alpha"], search_type="tags")
         assert len(results) > 0
 
+    def test_search_tags_skips_empty_tags_key(self, vm: VaultManager, vault_root: Path):
+        (vault_root / "Alpha" / "empty.md").write_text("---\ntags:\n---\nBody.")
+        results = vm.search("alph", ["Alpha"], search_type="tags")
+        assert len(results) > 0
+        assert not any("empty.md" in r["path"] for r in results)
+
+    def test_search_tags_null_list_item_does_not_match(self, vm: VaultManager, vault_root: Path):
+        (vault_root / "Alpha" / "null-item.md").write_text("---\ntags: [~]\n---\nBody.")
+        assert vm.search("none", ["Alpha"], search_type="tags") == []
+
     def test_search_unknown_vault_raises(self, vm: VaultManager):
         with pytest.raises(ValueError, match="not a recognized vault"):
             vm.search("anything", ["NoSuchVault"])
@@ -124,6 +134,15 @@ class TestListTags:
         # plain.md has no frontmatter, so shouldn't cause errors
         tag_map = vm.list_tags(["Alpha"])
         assert isinstance(tag_map["Alpha"], list)
+
+    @pytest.mark.parametrize("tags_yaml", ["tags:", "tags: null", "tags: 2026"])
+    def test_non_list_tags_do_not_raise(self, vm: VaultManager, vault_root: Path, tags_yaml: str):
+        (vault_root / "Alpha" / "odd.md").write_text(f"---\n{tags_yaml}\n---\nBody.")
+        assert "alpha" in vm.list_tags(["Alpha"])["Alpha"]
+
+    def test_scalar_tag_is_listed(self, vm: VaultManager, vault_root: Path):
+        (vault_root / "Alpha" / "odd.md").write_text("---\ntags: 2026\n---\nBody.")
+        assert "2026" in vm.list_tags(["Alpha"])["Alpha"]
 
 
 class TestCreateNote:

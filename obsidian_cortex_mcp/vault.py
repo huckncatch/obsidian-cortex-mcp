@@ -10,6 +10,16 @@ from typing import Optional
 from .frontmatter import parse, serialize
 
 
+def _frontmatter_tags(fm: dict) -> list[str]:
+    """Return a note's tags as strings. A bare `tags:` key parses to None."""
+    raw_tags = fm.get("tags")
+    if raw_tags is None:
+        return []
+    if not isinstance(raw_tags, list):
+        raw_tags = [raw_tags]
+    return [str(t) for t in raw_tags if t is not None and t != ""]
+
+
 class VaultManager:
     """Filesystem interface for a multi-vault Obsidian root directory."""
 
@@ -178,11 +188,8 @@ class VaultManager:
                     continue
                 content = md_file.read_text(encoding="utf-8")
                 fm, _ = parse(content)
-                raw_tags = fm.get("tags", [])
-                if isinstance(raw_tags, str):
-                    raw_tags = [raw_tags]
                 matching = [
-                    str(t) for t in raw_tags if query_lower in str(t).lower()
+                    t for t in _frontmatter_tags(fm) if query_lower in t.lower()
                 ]
                 if matching:
                     results.append({
@@ -203,10 +210,7 @@ class VaultManager:
                     continue
                 content = md_file.read_text(encoding="utf-8")
                 fm, _ = parse(content)
-                raw_tags = fm.get("tags", [])
-                if isinstance(raw_tags, str):
-                    raw_tags = [raw_tags]
-                tags.update(str(t) for t in raw_tags if t)
+                tags.update(_frontmatter_tags(fm))
             result[vault_name] = sorted(tags)
         return result
 
