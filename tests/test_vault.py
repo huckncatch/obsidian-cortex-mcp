@@ -291,3 +291,74 @@ class TestIntraVaultMove:
             vm.move_note("Alpha", "Beta", "plain.md")
             mock_cli.assert_not_called()
             assert (vm._vault_path("Beta") / "plain.md").exists()
+
+
+class TestPathConfinement:
+    """Every tool path must stay inside its vault; vault names must be plain folder names."""
+
+    @pytest.fixture()
+    def outside(self, vault_root: Path) -> Path:
+        """A file next to the vaults, as a stand-in for ~/.ssh or ~/.zshrc."""
+        target = vault_root / "not-a-vault" / "secret.md"
+        target.write_text("SECRET")
+        return target
+
+    ESCAPES = ["../not-a-vault/secret.md", "notes/../../not-a-vault/secret.md"]
+
+    @pytest.mark.parametrize("bad", ESCAPES)
+    def test_read_refused(self, vm: VaultManager, outside: Path, bad: str):
+        with pytest.raises(ValueError, match="outside vault"):
+            vm.read_note("Alpha", bad)
+
+    def test_absolute_refused(self, vm: VaultManager, outside: Path):
+        with pytest.raises(ValueError, match="not a relative path"):
+            vm.read_note("Alpha", str(outside))
+
+    @pytest.mark.parametrize("bad", ESCAPES)
+    def test_writes_refused(self, vm: VaultManager, outside: Path, bad: str):
+        with pytest.raises(ValueError):
+            vm.write_note("Alpha", bad, "pwned")
+        with pytest.raises(ValueError):
+            vm.edit_note("Alpha", bad, "SECRET", "pwned")
+        with pytest.raises(ValueError):
+            vm.update_frontmatter("Alpha", bad, {"x": 1})
+        assert outside.read_text() == "SECRET"
+
+    def test_create_refused(self, vm: VaultManager, vault_root: Path):
+        with pytest.raises(ValueError):
+            vm.create_note("Alpha", "../not-a-vault/new.md", body="x")
+        assert not (vault_root / "not-a-vault" / "new.md").exists()
+
+    def test_list_notes_refused(self, vm: VaultManager):
+        with pytest.raises(ValueError):
+            vm.list_notes("Alpha", "..")
+
+    def test_list_notes_vault_root_allowed(self, vm: VaultManager):
+        assert "plain.md" in vm.list_notes("Alpha", ".")
+
+    def test_moves_refused(self, vm: VaultManager, outside: Path):
+        with patch.object(vm, "_run_cli") as mock_cli:
+            with pytest.raises(ValueError):
+                vm.move_note("Alpha", "Alpha", "plain.md", "../not-a-vault/plain.md")
+            with pytest.raises(ValueError):
+                vm.move_note("Alpha", "Alpha", "../not-a-vault/secret.md", "stolen.md")
+            mock_cli.assert_not_called()
+        with pytest.raises(ValueError):
+            vm.move_note("Alpha", "Beta", "plain.md", "../not-a-vault/plain.md")
+        with pytest.raises(ValueError):
+            vm.move_note("Alpha", "Beta", "../not-a-vault/secret.md", "stolen.md")
+        assert outside.exists()
+
+    def test_vault_name_traversal_refused(self, vm: VaultManager, vault_root: Path):
+        (vault_root.parent / "elsewhere" / ".obsidian").mkdir(parents=True, exist_ok=True)
+        for bad in ("../elsewhere", "Alpha/notes", ".", ""):
+            with pytest.raises(ValueError):
+                vm._vault_path(bad)
+
+    def test_search_dash_query_is_a_pattern(self, vm: VaultManager, vault_root: Path):
+        marker = vault_root / "MARKER"
+        script = vault_root / "pre.sh"
+        script.write_text(f'#!/bin/sh\necho ran >> "{marker}"\ncat "$1"\n')
+        script.chmod(0o755)
+        vm.search(f"--pre={script}", ["Alpha"])
+        assert not marker.exists()

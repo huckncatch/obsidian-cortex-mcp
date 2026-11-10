@@ -46,12 +46,23 @@ class VaultManager:
     def _vault_path(self, vault: str) -> Path:
         """Return the absolute path for a vault name; raise ValueError if unknown."""
         path = self.root / vault
-        if not (path / ".obsidian").is_dir():
+        if vault in ("", ".", "..") or Path(vault).name != vault or not (path / ".obsidian").is_dir():
             known = ", ".join(self.list_vault_names())
             raise ValueError(
                 f"'{vault}' is not a recognized vault. Known vaults: {known}"
             )
         return path
+
+    def _note_path(self, vault: str, note_path: str, allow_vault_root: bool = False) -> Path:
+        """Return vault_path / note_path; refuse absolute paths and paths that resolve outside the vault."""
+        vault_path = self._vault_path(vault)
+        resolved_vault = vault_path.resolve()
+        if Path(note_path).is_absolute():
+            raise ValueError(f"'{note_path}' is not a relative path in vault '{vault}'")
+        full = (vault_path / note_path).resolve()
+        if not full.is_relative_to(resolved_vault) or (full == resolved_vault and not allow_vault_root):
+            raise ValueError(f"'{note_path}' is outside vault '{vault}'")
+        return vault_path / full.relative_to(resolved_vault)
 
     def _is_note(self, path: Path) -> bool:
         """True if path is a .md file outside of .obsidian directories."""
@@ -101,7 +112,7 @@ class VaultManager:
     def list_notes(self, vault: str, subfolder: str = "") -> list[str]:
         """Return relative paths (from vault root) of all entries in vault/subfolder."""
         vault_path = self._vault_path(vault)
-        base = vault_path / subfolder if subfolder else vault_path
+        base = self._note_path(vault, subfolder, allow_vault_root=True)
 
         if not base.exists():
             raise ValueError(
@@ -127,8 +138,7 @@ class VaultManager:
         limit: Optional[int] = None,
     ) -> str:
         """Read note content with line numbers. offset/limit for paging."""
-        vault_path = self._vault_path(vault)
-        full_path = vault_path / note_path
+        full_path = self._note_path(vault, note_path)
 
         if not full_path.exists():
             raise FileNotFoundError(
@@ -156,7 +166,8 @@ class VaultManager:
         for vault_name in vaults:
             vault_path = self._vault_path(vault_name)
             proc = subprocess.run(
-                ["rg", "--json", "-g", "*.md", query, str(vault_path)],
+                # -e and -- keep a query that starts with "-" from being read as an rg option
+                ["rg", "--json", "-g", "*.md", "-e", query, "--", str(vault_path)],
                 capture_output=True,
                 text=True,
             )
@@ -229,8 +240,7 @@ class VaultManager:
         frontmatter_data: Optional[dict] = None,
     ) -> str:
         """Create a new note. Errors if path already exists."""
-        vault_path = self._vault_path(vault)
-        full_path = vault_path / note_path
+        full_path = self._note_path(vault, note_path)
 
         if full_path.exists():
             raise FileExistsError(
@@ -245,8 +255,7 @@ class VaultManager:
 
     def write_note(self, vault: str, note_path: str, body: str) -> str:
         """Replace body of existing note; frontmatter is preserved."""
-        vault_path = self._vault_path(vault)
-        full_path = vault_path / note_path
+        full_path = self._note_path(vault, note_path)
 
         if not full_path.exists():
             raise FileNotFoundError(
@@ -266,8 +275,7 @@ class VaultManager:
         new_string: str,
     ) -> str:
         """Exact string replacement. old_string must match exactly once."""
-        vault_path = self._vault_path(vault)
-        full_path = vault_path / note_path
+        full_path = self._note_path(vault, note_path)
 
         if not full_path.exists():
             raise FileNotFoundError(
@@ -294,8 +302,7 @@ class VaultManager:
         updates: dict,
     ) -> str:
         """Merge updates into frontmatter. Set value to None to remove a key."""
-        vault_path = self._vault_path(vault)
-        full_path = vault_path / note_path
+        full_path = self._note_path(vault, note_path)
 
         if not full_path.exists():
             raise FileNotFoundError(
@@ -317,9 +324,8 @@ class VaultManager:
 
         Requires Obsidian to be running.
         """
-        vault_path = self._vault_path(vault)
-        src_full = vault_path / source_path
-        dst_full = vault_path / dest_path
+        src_full = self._note_path(vault, source_path)
+        dst_full = self._note_path(vault, dest_path)
 
         if not src_full.exists():
             raise FileNotFoundError(
@@ -352,11 +358,8 @@ class VaultManager:
         if source_vault == dest_vault:
             return self.intra_vault_move(source_vault, source_path, effective_dest)
 
-        src_vault_path = self._vault_path(source_vault)
-        dst_vault_path = self._vault_path(dest_vault)
-
-        src_full = src_vault_path / source_path
-        dst_full = dst_vault_path / effective_dest
+        src_full = self._note_path(source_vault, source_path)
+        dst_full = self._note_path(dest_vault, effective_dest)
 
         if not src_full.exists():
             raise FileNotFoundError(
@@ -375,13 +378,8 @@ class VaultManager:
 
     def _repo_path(self, vault: str, note_path: str) -> str:
         """Return '<vault>/<note_path>' relative to root; refuse paths outside the vault."""
-        vault_path = self._vault_path(vault).resolve()
-        if not note_path or Path(note_path).is_absolute():
-            raise ValueError(f"'{note_path}' is not a relative path in vault '{vault}'")
-        full = (vault_path / note_path).resolve()
-        if full == vault_path or not full.is_relative_to(vault_path):
-            raise ValueError(f"'{note_path}' is outside vault '{vault}'")
-        return str(full.relative_to(self.root.resolve()))
+        full = self._note_path(vault, note_path)
+        return str(full.relative_to(self.root))
 
     def _run(self, *cmd: str) -> subprocess.CompletedProcess:
         """Run a command in root with Homebrew on PATH and literal git pathspecs."""

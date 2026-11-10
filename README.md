@@ -29,9 +29,12 @@ server is the shim layer that unifies them.
 Same-vault moves go through the Obsidian CLI, which rewrites wikilinks and needs
 Obsidian running; cross-vault moves use the filesystem.
 
+Every tool refuses an absolute path, a path that resolves outside its vault,
+and a vault name that is not a folder directly under `OBSIDIAN_CORTEX_ROOT`.
+
 The lint and git tools run in `OBSIDIAN_CORTEX_ROOT`, which must be the root
-of a git repo for the git tools. Paths are literal (no globs) and must stay
-inside the vault. `git_commit` commits only the paths it is given, each of
+of a git repo for the git tools. Their paths are literal (no globs).
+`git_commit` commits only the paths it is given, each of
 which must have a staged change, so paths that other sessions staged stay
 staged. It never passes `--no-verify`: when a pre-commit hook blocks the
 commit, the tool returns the hook output and leaves the index as it was.
