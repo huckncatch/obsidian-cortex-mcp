@@ -2,12 +2,17 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
 
 from .frontmatter import parse, serialize
+
+# Clients such as Claude Desktop start the server with a minimal PATH. markdownlint-cli2 and the
+# gitleaks pre-commit hook live in Homebrew.
+_EXTRA_PATH = "/opt/homebrew/bin:/usr/local/bin"
 
 
 def _frontmatter_tags(fm: dict) -> list[str]:
@@ -365,3 +370,90 @@ class VaultManager:
         dst_full.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src_full), str(dst_full))
         return str(dst_full)
+
+    # ── Lint and git ─────────────────────────────────────────────────────────
+
+    def _repo_path(self, vault: str, note_path: str) -> str:
+        """Return '<vault>/<note_path>' relative to root; refuse paths outside the vault."""
+        vault_path = self._vault_path(vault).resolve()
+        if not note_path or Path(note_path).is_absolute():
+            raise ValueError(f"'{note_path}' is not a relative path in vault '{vault}'")
+        full = (vault_path / note_path).resolve()
+        if full == vault_path or not full.is_relative_to(vault_path):
+            raise ValueError(f"'{note_path}' is outside vault '{vault}'")
+        return str(full.relative_to(self.root.resolve()))
+
+    def _run(self, *cmd: str) -> subprocess.CompletedProcess:
+        """Run a command in root with Homebrew on PATH and literal git pathspecs."""
+        env = dict(os.environ)
+        env["PATH"] = _EXTRA_PATH + os.pathsep + env.get("PATH", "")
+        env["GIT_LITERAL_PATHSPECS"] = "1"
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        try:
+            return subprocess.run(
+                cmd, cwd=self.root, env=env, capture_output=True, text=True
+            )
+        except FileNotFoundError:
+            raise RuntimeError(f"'{cmd[0]}' not found on PATH")
+
+    def _git(self, *args: str) -> str:
+        """Run git in root; raise RuntimeError with its output on failure."""
+        result = self._run("git", *args)
+        if result.returncode != 0:
+            detail = (result.stdout + result.stderr).strip()
+            raise RuntimeError(f"git {args[0]} failed: {detail}")
+        return result.stdout
+
+    def lint_note(self, vault: str, note_path: str) -> list[str]:
+        """Lint one note with markdownlint-cli2 from root. Return 'line[:col] rule message' lines."""
+        rel = self._repo_path(vault, note_path)
+        if not (self.root / rel).is_file():
+            raise FileNotFoundError(f"Note not found at '{note_path}' in vault '{vault}'")
+        # A leading ':' makes markdownlint-cli2 read the argument as a literal path, not a glob
+        result = self._run("markdownlint-cli2", ":" + rel)
+        if result.returncode > 1:
+            detail = (result.stderr or result.stdout).strip()
+            raise RuntimeError(f"markdownlint-cli2 failed: {detail}")
+        violations = []
+        prefix = rel + ":"
+        for line in result.stderr.splitlines():
+            if not line.startswith(prefix):
+                continue
+            location, _, rest = line[len(prefix):].partition(" ")
+            if rest.startswith("error "):
+                rest = rest[len("error "):]
+            violations.append(f"{location} {rest}")
+        return violations
+
+    def git_status(self, vault: str, note_path: str) -> list[str]:
+        """Return the porcelain status lines for one path; an ignored path shows '!!'."""
+        rel = self._repo_path(vault, note_path)
+        return self._git("status", "--porcelain", "--ignored", "--", rel).splitlines()
+
+    def git_stage(self, vault: str, note_path: str) -> str:
+        """Stage one path (a change, new file, or deletion). Return the repo-relative path."""
+        rel = self._repo_path(vault, note_path)
+        self._git("add", "--", rel)
+        return rel
+
+    def git_commit(self, message: str, paths: list[tuple[str, str]]) -> str:
+        """Commit the given (vault, path) pairs with git commit -- <paths>.
+
+        Each path must have a staged change. Other staged paths stay staged. The pre-commit
+        hooks run. Return the new commit's short hash and subject.
+        """
+        if not message.strip():
+            raise ValueError("A commit message is required")
+        if not paths:
+            raise ValueError("At least one path is required")
+        rels = [self._repo_path(vault, p) for vault, p in paths]
+        unstaged = [
+            rel for rel in rels
+            if not self._git("diff", "--cached", "--name-only", "--", rel).strip()
+        ]
+        if unstaged:
+            raise ValueError(
+                "Nothing staged for: " + ", ".join(unstaged) + ". Stage each path with git_stage first."
+            )
+        self._git("commit", "-m", message, "--", *rels)
+        return self._git("log", "-1", "--format=%h %s").strip()

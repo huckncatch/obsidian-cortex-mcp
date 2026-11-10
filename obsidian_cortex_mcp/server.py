@@ -7,7 +7,7 @@ from pathlib import Path
 from fastmcp import FastMCP
 
 from .vault import VaultManager
-from .tools import discovery, reading, writing
+from .tools import discovery, reading, repo, writing
 
 
 def _build_server() -> FastMCP:
@@ -31,6 +31,7 @@ def _build_server() -> FastMCP:
     discovery.register(mcp, vm)
     reading.register(mcp, vm)
     writing.register(mcp, vm)
+    repo.register(mcp, vm)
 
     return mcp
 

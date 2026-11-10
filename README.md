@@ -21,14 +21,30 @@ server is the shim layer that unifies them.
 | `edit_note` | Exact string replacement (old_string → new_string) |
 | `update_frontmatter` | Add/update/remove frontmatter fields |
 | `move_note` | Move a note within or across vaults (see below) |
+| `lint_note` | Lint one note with `markdownlint-cli2` (never fixes) |
+| `git_status` | `git status --porcelain` for one path |
+| `git_stage` | `git add` one path |
+| `git_commit` | Commit named staged paths only (no push) |
 
 Same-vault moves go through the Obsidian CLI, which rewrites wikilinks and needs
 Obsidian running; cross-vault moves use the filesystem.
+
+The lint and git tools run in `OBSIDIAN_CORTEX_ROOT`, which must be the root
+of a git repo for the git tools. Paths are literal (no globs) and must stay
+inside the vault. `git_commit` commits only the paths it is given, each of
+which must have a staged change, so paths that other sessions staged stay
+staged. It never passes `--no-verify`: when a pre-commit hook blocks the
+commit, the tool returns the hook output and leaves the index as it was.
+`/opt/homebrew/bin` and `/usr/local/bin` are added to `PATH` for these
+commands, so `markdownlint-cli2` and hooks that need Homebrew tools work when
+a client starts the server with a minimal `PATH`.
 
 ## Requirements
 
 - Python 3.11+
 - [ripgrep](https://github.com/BurntSushi/ripgrep) (`brew install ripgrep`)
+- git, and [markdownlint-cli2](https://github.com/DavidAnson/markdownlint-cli2)
+  (`brew install markdownlint-cli2`) for `lint_note`
 
 ## Setup
 
@@ -83,12 +99,13 @@ See the obsidian-cortex section of `~/config/NOTES.md`.
 
 ```text
 server.py       FastMCP app, env validation, tool registration
-vault.py        VaultManager: all filesystem I/O and ripgrep
+vault.py        VaultManager: all filesystem I/O, ripgrep, lint and git
 frontmatter.py  Pure YAML parse/serialize — no I/O
 tools/
   discovery.py  list_vaults, list_notes
   reading.py    read_note, search, list_tags
   writing.py    create_note, write_note, edit_note, update_frontmatter, move_note
+  repo.py       lint_note, git_status, git_stage, git_commit
 ```
 
 ## Testing
