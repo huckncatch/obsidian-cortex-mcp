@@ -379,7 +379,8 @@ class VaultManager:
     def _repo_path(self, vault: str, note_path: str) -> str:
         """Return '<vault>/<note_path>' relative to root; refuse paths outside the vault."""
         full = self._note_path(vault, note_path)
-        return str(full.relative_to(self.root))
+        # Forward slashes on every OS: git output and tool replies use them
+        return full.relative_to(self.root).as_posix()
 
     def _run(self, *cmd: str) -> subprocess.CompletedProcess:
         """Run a command in root with Homebrew on PATH and literal git pathspecs."""
@@ -387,9 +388,14 @@ class VaultManager:
         env["PATH"] = _EXTRA_PATH + os.pathsep + env.get("PATH", "")
         env["GIT_LITERAL_PATHSPECS"] = "1"
         env["GIT_TERMINAL_PROMPT"] = "0"
+        # Resolve the full path first: on Windows, subprocess finds only .exe files, and npm
+        # installs tools such as markdownlint-cli2 as .cmd shims
+        exe = shutil.which(cmd[0], path=env["PATH"])
+        if exe is None:
+            raise RuntimeError(f"'{cmd[0]}' not found on PATH")
         try:
             return subprocess.run(
-                cmd, cwd=self.root, env=env, capture_output=True, text=True
+                (exe, *cmd[1:]), cwd=self.root, env=env, capture_output=True, text=True
             )
         except FileNotFoundError:
             raise RuntimeError(f"'{cmd[0]}' not found on PATH")
